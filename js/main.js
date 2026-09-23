@@ -148,11 +148,12 @@ document.addEventListener('DOMContentLoaded', () => {
   // 8. Navigasyon Aktif Link Takibi (IntersectionObserver)
   const sections = document.querySelectorAll('section[id]');
   const navLinks = document.querySelectorAll('.nav-menu .nav-link');
+  const tabItems = document.querySelectorAll('.mobile-bottom-tabbar .tab-item');
 
   window.addEventListener('scroll', () => {
     let current = '';
     sections.forEach(section => {
-      const sectionTop = section.offsetTop - 120;
+      const sectionTop = section.offsetTop - 140;
       const sectionHeight = section.offsetHeight;
       if (window.scrollY >= sectionTop && window.scrollY < sectionTop + sectionHeight) {
         current = section.getAttribute('id');
@@ -165,5 +166,128 @@ document.addEventListener('DOMContentLoaded', () => {
         link.classList.add('active');
       }
     });
-  });
+
+    tabItems.forEach(tab => {
+      const href = tab.getAttribute('href');
+      if (href && href.startsWith('#')) {
+        tab.classList.toggle('active', href === `#${current}`);
+      }
+    });
+  }, { passive: true });
+
+  // 9. Hizmetler Otomatik Kayan Slider (Mobil)
+  const servicesGrid = document.getElementById('servicesGrid');
+  const sliderDots = document.querySelectorAll('#servicesSliderDots .slider-dot');
+
+  if (servicesGrid && sliderDots.length > 0) {
+    const cards = servicesGrid.querySelectorAll('.service-card');
+    let autoSlideInterval = null;
+    let isInteracting = false;
+    let resumeTimer = null;
+
+    function getActiveIndex() {
+      const scrollPos = servicesGrid.scrollLeft;
+      let minDiff = Infinity;
+      let activeIdx = 0;
+
+      cards.forEach((card, idx) => {
+        const cardCenter = card.offsetLeft - servicesGrid.offsetLeft;
+        const diff = Math.abs(cardCenter - scrollPos);
+        if (diff < minDiff) {
+          minDiff = diff;
+          activeIdx = idx;
+        }
+      });
+      return activeIdx;
+    }
+
+    function setActiveDot(index) {
+      sliderDots.forEach((dot, idx) => {
+        dot.classList.toggle('active', idx === index);
+      });
+    }
+
+    function scrollToCard(index) {
+      if (index >= 0 && index < cards.length) {
+        const card = cards[index];
+        const targetScroll = card.offsetLeft - servicesGrid.offsetLeft - 16;
+        servicesGrid.scrollTo({
+          left: Math.max(0, targetScroll),
+          behavior: 'smooth'
+        });
+        setActiveDot(index);
+      }
+    }
+
+    function advanceSlide() {
+      if (window.innerWidth > 768 || isInteracting) return;
+      const currentIdx = getActiveIndex();
+      const nextIdx = (currentIdx + 1) % cards.length;
+      scrollToCard(nextIdx);
+    }
+
+    function startAutoSlide() {
+      stopAutoSlide();
+      if (window.innerWidth <= 768) {
+        autoSlideInterval = setInterval(advanceSlide, 3500);
+      }
+    }
+
+    function stopAutoSlide() {
+      if (autoSlideInterval) {
+        clearInterval(autoSlideInterval);
+        autoSlideInterval = null;
+      }
+    }
+
+    function pauseAndResume() {
+      isInteracting = true;
+      stopAutoSlide();
+      clearTimeout(resumeTimer);
+      resumeTimer = setTimeout(() => {
+        isInteracting = false;
+        startAutoSlide();
+      }, 4000);
+    }
+
+    // Scroll olduğunda aktif noktayı anlık güncelle
+    let scrollDebounce;
+    servicesGrid.addEventListener('scroll', () => {
+      clearTimeout(scrollDebounce);
+      scrollDebounce = setTimeout(() => {
+        setActiveDot(getActiveIndex());
+      }, 70);
+    }, { passive: true });
+
+    // Kullanıcı dokunma ve fare etkileşimleri
+    servicesGrid.addEventListener('touchstart', pauseAndResume, { passive: true });
+    servicesGrid.addEventListener('touchmove', pauseAndResume, { passive: true });
+    servicesGrid.addEventListener('mouseenter', () => {
+      isInteracting = true;
+      stopAutoSlide();
+    });
+    servicesGrid.addEventListener('mouseleave', () => {
+      isInteracting = false;
+      startAutoSlide();
+    });
+
+    // Noktalara tıklayarak istenen karta gitme
+    sliderDots.forEach((dot, idx) => {
+      dot.addEventListener('click', () => {
+        pauseAndResume();
+        scrollToCard(idx);
+      });
+    });
+
+    // Sayfa açıldığında başlat
+    startAutoSlide();
+
+    window.addEventListener('resize', () => {
+      if (window.innerWidth <= 768) {
+        startAutoSlide();
+      } else {
+        stopAutoSlide();
+      }
+    });
+  }
 });
