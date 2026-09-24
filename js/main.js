@@ -34,36 +34,210 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // 3. Galeri Filtreleme
-  const filterBtns = document.querySelectorAll('.filter-btn');
-  const galleryItems = document.querySelectorAll('.gallery-item');
+  // 3. Galeri Slider & Filtreleme Sistemi (Minimalist & Kaydırılabilir)
+  const gallerySlider = document.getElementById('gallerySlider');
+  const galleryPrevBtn = document.getElementById('galleryPrevBtn');
+  const galleryNextBtn = document.getElementById('galleryNextBtn');
+  const galleryDotsContainer = document.getElementById('gallerySliderDots');
+  const galleryFilterBtns = document.querySelectorAll('.gallery-filters .filter-btn');
+  const galleryItems = document.querySelectorAll('.gallery-slider .gallery-item');
 
-  filterBtns.forEach(btn => {
-    btn.addEventListener('click', () => {
-      // Aktif buton sınıfını güncelle
-      filterBtns.forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
+  if (gallerySlider && galleryItems.length > 0) {
+    let galleryAutoSlide = null;
+    let isGalleryInteracting = false;
+    let galleryResumeTimer = null;
 
-      const filterValue = btn.getAttribute('data-filter');
+    function getVisibleItems() {
+      return Array.from(galleryItems).filter(item => item.style.display !== 'none');
+    }
 
-      galleryItems.forEach(item => {
-        const itemCategory = item.getAttribute('data-category');
-        if (filterValue === 'all' || itemCategory === filterValue) {
-          item.style.display = 'block';
-          setTimeout(() => {
-            item.style.opacity = '1';
-            item.style.transform = 'scale(1)';
-          }, 50);
-        } else {
-          item.style.opacity = '0';
-          item.style.transform = 'scale(0.95)';
-          setTimeout(() => {
-            item.style.display = 'none';
-          }, 300);
+    function renderGalleryDots() {
+      if (!galleryDotsContainer) return;
+      galleryDotsContainer.innerHTML = '';
+      const visible = getVisibleItems();
+      if (visible.length <= 1) {
+        galleryDotsContainer.style.display = 'none';
+        return;
+      }
+      galleryDotsContainer.style.display = 'flex';
+
+      visible.forEach((item, idx) => {
+        const dot = document.createElement('button');
+        dot.className = `slider-dot ${idx === 0 ? 'active' : ''}`;
+        dot.setAttribute('type', 'button');
+        dot.setAttribute('aria-label', `${idx + 1}. Proje Görseli`);
+        dot.addEventListener('click', () => {
+          pauseGalleryAuto();
+          scrollToGalleryIndex(idx);
+        });
+        galleryDotsContainer.appendChild(dot);
+      });
+    }
+
+    function getActiveGalleryIndex() {
+      const visible = getVisibleItems();
+      if (visible.length === 0) return 0;
+      const scrollPos = gallerySlider.scrollLeft;
+      let minDiff = Infinity;
+      let activeIdx = 0;
+
+      visible.forEach((item, idx) => {
+        const itemLeft = item.offsetLeft - gallerySlider.offsetLeft;
+        const diff = Math.abs(itemLeft - scrollPos);
+        if (diff < minDiff) {
+          minDiff = diff;
+          activeIdx = idx;
         }
       });
+      return activeIdx;
+    }
+
+    function setActiveGalleryDot(idx) {
+      if (!galleryDotsContainer) return;
+      const dots = galleryDotsContainer.querySelectorAll('.slider-dot');
+      dots.forEach((dot, dIdx) => {
+        dot.classList.toggle('active', dIdx === idx);
+      });
+    }
+
+    function updateNavButtons() {
+      if (!galleryPrevBtn || !galleryNextBtn) return;
+      const scrollLeft = gallerySlider.scrollLeft;
+      const maxScroll = gallerySlider.scrollWidth - gallerySlider.clientWidth;
+
+      if (maxScroll <= 10) {
+        galleryPrevBtn.style.opacity = '0.35';
+        galleryPrevBtn.style.pointerEvents = 'none';
+        galleryNextBtn.style.opacity = '0.35';
+        galleryNextBtn.style.pointerEvents = 'none';
+        return;
+      }
+      galleryPrevBtn.style.opacity = scrollLeft <= 10 ? '0.35' : '1';
+      galleryPrevBtn.style.pointerEvents = scrollLeft <= 10 ? 'none' : 'auto';
+      galleryNextBtn.style.opacity = scrollLeft >= maxScroll - 10 ? '0.35' : '1';
+      galleryNextBtn.style.pointerEvents = scrollLeft >= maxScroll - 10 ? 'none' : 'auto';
+    }
+
+    function scrollToGalleryIndex(idx) {
+      const visible = getVisibleItems();
+      if (idx >= 0 && idx < visible.length) {
+        const target = visible[idx];
+        const targetScroll = target.offsetLeft - gallerySlider.offsetLeft;
+        gallerySlider.scrollTo({
+          left: Math.max(0, targetScroll),
+          behavior: 'smooth'
+        });
+        setActiveGalleryDot(idx);
+      }
+    }
+
+    function scrollByStep(direction) {
+      const visible = getVisibleItems();
+      const cardWidth = visible[0] ? (visible[0].offsetWidth + 20) : 300;
+      gallerySlider.scrollBy({
+        left: direction * cardWidth,
+        behavior: 'smooth'
+      });
+    }
+
+    if (galleryPrevBtn) {
+      galleryPrevBtn.addEventListener('click', () => {
+        pauseGalleryAuto();
+        scrollByStep(-1);
+      });
+    }
+
+    if (galleryNextBtn) {
+      galleryNextBtn.addEventListener('click', () => {
+        pauseGalleryAuto();
+        scrollByStep(1);
+      });
+    }
+
+    // Scroll dinleyicisi: aktif nokta ve buton durumunu güncelle
+    let gScrollDebounce;
+    gallerySlider.addEventListener('scroll', () => {
+      clearTimeout(gScrollDebounce);
+      gScrollDebounce = setTimeout(() => {
+        setActiveGalleryDot(getActiveGalleryIndex());
+        updateNavButtons();
+      }, 50);
+    }, { passive: true });
+
+    function pauseGalleryAuto() {
+      isGalleryInteracting = true;
+      if (galleryAutoSlide) clearInterval(galleryAutoSlide);
+      clearTimeout(galleryResumeTimer);
+      galleryResumeTimer = setTimeout(() => {
+        isGalleryInteracting = false;
+        startGalleryAutoSlide();
+      }, 5000);
+    }
+
+    function startGalleryAutoSlide() {
+      if (galleryAutoSlide) clearInterval(galleryAutoSlide);
+      if (window.innerWidth <= 768) {
+        galleryAutoSlide = setInterval(() => {
+          if (isGalleryInteracting) return;
+          const visible = getVisibleItems();
+          if (visible.length <= 1) return;
+          const currentIdx = getActiveGalleryIndex();
+          const nextIdx = (currentIdx + 1) % visible.length;
+          scrollToGalleryIndex(nextIdx);
+        }, 4000);
+      }
+    }
+
+    gallerySlider.addEventListener('touchstart', pauseGalleryAuto, { passive: true });
+    gallerySlider.addEventListener('mouseenter', () => {
+      isGalleryInteracting = true;
+      if (galleryAutoSlide) clearInterval(galleryAutoSlide);
     });
-  });
+    gallerySlider.addEventListener('mouseleave', () => {
+      isGalleryInteracting = false;
+      startGalleryAutoSlide();
+    });
+
+    // Kategori Filtreleme
+    galleryFilterBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        galleryFilterBtns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+
+        const filterValue = btn.getAttribute('data-filter');
+
+        galleryItems.forEach(item => {
+          const itemCategory = item.getAttribute('data-category');
+          if (filterValue === 'all' || itemCategory === filterValue) {
+            item.style.display = 'flex';
+            item.style.opacity = '1';
+            item.style.transform = 'scale(1)';
+          } else {
+            item.style.display = 'none';
+            item.style.opacity = '0';
+          }
+        });
+
+        gallerySlider.scrollTo({ left: 0, behavior: 'smooth' });
+        renderGalleryDots();
+        setTimeout(updateNavButtons, 200);
+      });
+    });
+
+    // İlk kurulum
+    renderGalleryDots();
+    updateNavButtons();
+    startGalleryAutoSlide();
+
+    window.addEventListener('resize', () => {
+      updateNavButtons();
+      if (window.innerWidth <= 768) {
+        startGalleryAutoSlide();
+      } else if (galleryAutoSlide) {
+        clearInterval(galleryAutoSlide);
+      }
+    });
+  }
 
   // 4. Hizmet Seçim Butonları (Kartlardaki "Teklif / Bilgi Al" butonları formu otomatik doldurur)
   window.selectServiceAndScroll = function(serviceName) {
@@ -85,13 +259,12 @@ document.addEventListener('DOMContentLoaded', () => {
       e.preventDefault();
 
       const name = document.getElementById('wizardName')?.value.trim() || 'Değerli Müşteri';
-      const phone = document.getElementById('wizardPhone')?.value.trim() || 'Belirtilmedi';
       const service = document.getElementById('wizardService')?.value || 'Elektrik Hizmeti';
       const address = document.getElementById('wizardAddress')?.value.trim() || 'Merzifon';
       const note = document.getElementById('wizardNote')?.value.trim() || 'Acil bilgi ve fiyat teklifi rica ediyorum.';
 
-      // WhatsApp formatlı mesaj metni
-      const message = `Merhaba Mehmet Usta (Mert Elektrik Sistemleri),\n\nWeb siteniz üzerinden servis/fiyat teklifi talebinde bulunuyorum:\n\n👤 *Ad Soyad:* ${name}\n📞 *Telefon:* ${phone}\n⚡ *Talep Edilen Hizmet:* ${service}\n📍 *Bölge/Adres:* ${address}\n📝 *Not/Açıklama:* ${note}\n\nEn kısa sürede dönüşünüzü rica ederim.`;
+      // WhatsApp formatlı mesaj metni (Telefon zaten WhatsApp sohbetinde otomatik görünüyor)
+      const message = `Merhaba Mehmet Usta (Mert Elektrik Sistemleri),\n\nWeb siteniz üzerinden servis/fiyat teklifi talebinde bulunuyorum:\n\n👤 *Ad Soyad:* ${name}\n⚡ *Talep Edilen Hizmet:* ${service}\n📍 *Bölge/Adres:* ${address}\n📝 *Not/Açıklama:* ${note}\n\nEn kısa sürede dönüşünüzü rica ederim.`;
 
       const encodedMessage = encodeURIComponent(message);
       const whatsappUrl = `https://wa.me/905515309205?text=${encodedMessage}`;
@@ -288,6 +461,29 @@ document.addEventListener('DOMContentLoaded', () => {
       } else {
         stopAutoSlide();
       }
+    });
+  }
+
+  // ==================== YUKARI ÇIK BUTONU (SCROLL TO TOP) ====================
+  const scrollTopBtn = document.getElementById('scrollTopBtn');
+  if (scrollTopBtn) {
+    const handleScrollTopVisibility = () => {
+      // 300px aşağı inildiğinde veya sayfa altına yaklaşıldığında butonu göster
+      if (window.scrollY > 300) {
+        scrollTopBtn.classList.add('visible');
+      } else {
+        scrollTopBtn.classList.remove('visible');
+      }
+    };
+
+    window.addEventListener('scroll', handleScrollTopVisibility, { passive: true });
+    handleScrollTopVisibility();
+
+    scrollTopBtn.addEventListener('click', () => {
+      window.scrollTo({
+        top: 0,
+        behavior: 'smooth'
+      });
     });
   }
 });
